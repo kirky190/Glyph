@@ -554,23 +554,7 @@ document.getElementById('importBtn').addEventListener('click', () => {
 // personal access token (entered once, stored only in this browser) to
 // create/update a secret Gist, and a revision-less raw URL so Tasker
 // always reads the latest content without needing any auth itself.
-//
-// FIXED_TOKEN / FIXED_GIST_ID / FIXED_OWNER: fill these in with your
-// already-working token/gist details so ANYONE who opens this page can
-// tap Glyph with zero setup - no prompt, no per-device token entry.
-// WARNING: this bakes your token into the page's public source code.
-// Anyone who views-source on this URL can read/write/delete any of your
-// gists (not just this one). Fine for a small personal tool you trust
-// the audience of, but know that's the tradeoff. Leave FIXED_TOKEN as
-// '' to fall back to the old per-device prompt instead.
-const FIXED_TOKEN = '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';
-const FIXED_GIST_ID = '0d0f7464aa2b29a28e686cf03cdd9073';
-const FIXED_OWNER = 'kirky190';
-
 async function ensureGist() {
-  if (FIXED_TOKEN && FIXED_GIST_ID && FIXED_OWNER) {
-    return { gistId: FIXED_GIST_ID, owner: FIXED_OWNER };
-  }
   let gistId = localStorage.getItem('gh_gist_id');
   let owner = localStorage.getItem('gh_owner');
   // Treat a missing OR corrupted (literal "undefined"/"null" string, or
@@ -638,7 +622,7 @@ document.getElementById('cloudSendBtn').addEventListener('click', async () => {
   statusEl.textContent = 'Sending...';
   try {
     const { gistId, owner } = await ensureGist();
-    const token = FIXED_TOKEN || localStorage.getItem('gh_token');
+    const token = localStorage.getItem('gh_token');
     const res = await fetch('https://api.github.com/gists/' + gistId, {
       method: 'PATCH',
       headers: {
