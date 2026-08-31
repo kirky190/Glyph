@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>
+  // Diagnostic: catch any JS error and show it directly on the page,
+  // since there's no easy way to see a console on a phone browser.
+  window.__errors = [];
+  window.addEventListener('error', function(e) {
+    window.__errors.push((e.message || 'Unknown error') + ' — ' + (e.filename || '') + ':' + e.lineno);
+  });
+  window.addEventListener('DOMContentLoaded', function() {
+    if (window.__errors.length) {
+      var banner = document.createElement('div');
+      banner.style.cssText = 'background:#c0392b;color:#fff;padding:12px;font-family:monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;';
+      banner.textContent = 'JS ERROR:\n' + window.__errors.join('\n');
+      document.body.insertBefore(banner, document.body.firstChild);
+    }
+  });
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>4a Pro Glyph Translator</title>
+<style>
+  :root {
+    --bg: #0e0e10;
+    --panel: #1a1a1d;
+    --border: #333;
+    --led-off: #2a2a2d;
+    --accent: #ffb300;
+    --text: #eee;
+    --muted: #999;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 16px;
+    padding-bottom: 48px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 16px; line-height: 1.4; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  .panel h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(13, 1fr);
+    gap: 2px;
+    max-width: 340px;
+    margin: 0 auto;
+    aspect-ratio: 1;
+    touch-action: none;
+    user-select: none;
+  }
+  .cell { aspect-ratio: 1; border-radius: 2px; background: var(--led-off); }
+  .cell.masked { background: transparent; pointer-events: none; }
+  .cell.editable { cursor: pointer; }
+  .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .row label { font-size: 13px; color: var(--muted); min-width: 74px; }
+  .savedItem {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #131315;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .savedItem .name {
+    flex: 1;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .savedItem canvas {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    background: #000;
+    border-radius: 4px;
+    image-rendering: pixelated;
+  }
+  .savedItem button {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  #brightLabel { width: 28px; text-align: right; font-family: monospace; font-size: 15px; }
+  .btnrow { display: flex; gap: 8px; margin-top: 14px; }
+  button {
+    flex: 1;
+    background: #2a2a2d;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  button:active { background: #333; }
+  button.primary { background: var(--accent); color: #1a1200; border: none; font-weight: 600; }
+  textarea {
+    width: 100%;
+    background: #0a0a0b;
+    border: 1px solid var(--border);
+    color: #8fe28f;
+    font-family: monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 8px;
+    border-radius: 8px;
+    resize: none;
+    word-break: break-all;
+  }
+  #copyStatus { font-size: 12px; color: var(--accent); margin-top: 6px; height: 14px; }
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  #overlay.show { display: flex; }
+  #confirmBox {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    width: 80%;
+    max-width: 320px;
+    text-align: center;
+  }
+  #confirmBox p {
+    font-size: 14px;
+    margin: 0 0 16px;
+  }
+  #confirmBox .btnrow { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <div id="confirmBox">
+    <p id="confirmMessage"></p>
+    <div class="btnrow">
+      <button id="confirmCancel">Cancel</button>
+      <button class="primary" id="confirmOk">Yes</button>
+    </div>
+  </div>
+</div>
+
+<h1>4a Pro Glyph Translator</h1>
+<div class="subtitle">Paint a pattern on the real 4a Pro LED shape. Exports a 625-char hex string (upscaled to 25×25) to paste into the original GlyphMatrix Tasker Plugin app's pattern field / %glyph variable.</div>
+
+<div class="panel">
+  <h2>Pattern (tap or drag)</h2>
+  <div id="grid"></div>
+  <div class="row">
+    <label>Brightness</label>
+    <input type="range" id="bright" min="0" max="10" value="10">
+    <span id="brightLabel">10</span>
+  </div>
+  <div class="btnrow">
+    <button id="clearBtn">Clear</button>
+    <button id="fillBtn">Fill</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Save / Load</h2>
+  <div class="row" style="margin-top:0;">
+    <input type="text" id="patternName" placeholder="Pattern name" style="flex:1;background:#0a0a0b;border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:14px;">
+    <button class="primary" id="saveBtn" style="flex:0 0 auto;padding:9px 16px;">Save</button>
+  </div>
+  <div id="savedList" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;"></div>
+  <div id="savedEmpty" style="color:var(--muted);font-size:13px;margin-top:8px;">No saved patterns yet.</div>
+</div>
+
+<div class="panel">
+  <h2>Import from hex</h2>
+  <textarea id="importInput" rows="4" placeholder="Paste a 625-character hex string here" style="color:var(--text);"></textarea>
+  <button id="importBtn" style="margin-top:10px;">Import onto grid</button>
+  <div id="importStatus" style="font-size:12px;color:var(--accent);margin-top:6px;height:14px;"></div>
+</div>
+
+<div class="panel">
+  <h2>Cloud sync (for Tasker)</h2>
+  <div class="subtitle" style="margin-bottom:10px;">One-time setup with a GitHub token, then Tasker pulls your pattern automatically &mdash; no copy/paste, no files.</div>
+  <button class="primary" id="cloudSendBtn">Send to cloud</button>
+  <div id="cloudStatus" style="font-size:12px;color:var(--accent);margin-top:8px;min-height:14px;"></div>
+  <div class="row" id="cloudUrlRow" style="display:none;">
+    <label style="min-width:auto;">Tasker URL</label>
+    <input type="text" id="cloudUrl" readonly style="flex:1;background:#0a0a0b;border:1px solid var(--border);color:#8fe28f;padding:8px;border-radius:8px;font-size:11px;font-family:monospace;">
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Output &mdash; paste into original app</h2>
+  <textarea id="output" rows="6" readonly></textarea>
+  <button class="primary" id="copyBtn" style="margin-top:10px;">Copy to clipboard</button>
+  <button id="downloadBtn" style="margin-top:10px;">Download as file (glyph.txt)</button>
+  <div id="copyStatus"></div>
+</div>
+
+<script>
+// Real 4a Pro LED mask, reconstructed from Nothing's official
+// Glyph Matrix Developer Kit LED allocation diagram (137 lit cells).
+const MASK = [
+  "....#####....",
+  "..#########..",
+  ".###########.",
+  ".###########.",
+  "#############",
+  "#############",
+  "#############",
+  "#############",
+  "#############",
+  ".###########.",
+  ".###########.",
+  "..#########..",
+  "....#####...."
+];
+
+const SIZE = 13;
+const state = Array.from({length: SIZE}, () => new Array(SIZE).fill(0));
+
+const gridEl = document.getElementById('grid');
+const brightEl = document.getElementById('bright');
+const brightLabelEl = document.getElementById('brightLabel');
+const outputEl = document.getElementById('output');
+const copyStatusEl = document.getElementById('copyStatus');
+
+let currentBrightness = 10;
+let painting = false;
+let paintValue = 10;
+
+function hexChar(v) {
+  return v.toString(16).toUpperCase();
+}
+
+// UI works in simple levels 0-10; convert to the 0-F hex the app expects,
+// spread evenly across the full range.
+function levelToHex(level) {
+  return hexChar(Math.round(level * 15 / 10));
+}
+
+function isLit(x, y) {
+  return MASK[y][x] === '#';
+}
+
+function buildGrid() {
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      if (isLit(x, y)) {
+        cell.classList.add('editable');
+        cell.dataset.x = x;
+        cell.dataset.y = y;
+        // Direct per-cell click as a fallback in case pointer/drag
+        // events aren't reliable on this browser - simple tap always
+        // toggles the cell even if drag-painting doesn't work.
+        cell.addEventListener('click', () => {
+          const v = (state[y][x] === currentBrightness) ? 0 : currentBrightness;
+          paintCell(x, y, v);
+        });
+      } else {
+        cell.classList.add('masked');
+      }
+      gridEl.appendChild(cell);
+    }
+  }
+}
+
+function paintCell(x, y, value) {
+  if (!isLit(x, y)) return;
+  state[y][x] = value;
+  const idx = y * SIZE + x;
+  const cell = gridEl.children[idx];
+  const intensity = value / 10;
+  if (value === 0) {
+    cell.style.background = 'var(--led-off)';
+  } else {
+    const r = 255, g = Math.round(255 * (0.85 + 0.15*intensity)), b = Math.round(255 * 0.6 * intensity);
+    cell.style.background = `rgba(${r},${g},${b},${0.25 + 0.75*intensity})`;
+  }
+  render();
+}
+
+function cellFromEvent(e) {
+  const touch = e.touches ? e.touches[0] : e;
+  const el = document.elementFromPoint(touch.clientX, touch.clientY);
+  if (!el || !el.classList.contains('editable')) return null;
+  return { x: parseInt(el.dataset.x), y: parseInt(el.dataset.y) };
+}
+
+gridEl.addEventListener('pointerdown', (e) => {
+  const c = cellFromEvent(e);
+  if (!c) return;
+  painting = true;
+  paintValue = (state[c.y][c.x] === currentBrightness) ? 0 : currentBrightness;
+  paintCell(c.x, c.y, paintValue);
+  e.preventDefault();
+});
+gridEl.addEventListener('pointermove', (e) => {
+  if (!painting) return;
+  const c = cellFromEvent(e);
+  if (!c) return;
+  paintCell(c.x, c.y, paintValue);
+  e.preventDefault();
+});
+window.addEventListener('pointerup', () => painting = false);
+gridEl.addEventListener('contextmenu', (e) => e.preventDefault());
+
+brightEl.addEventListener('input', () => {
+  currentBrightness = parseInt(brightEl.value);
+  brightLabelEl.textContent = currentBrightness;
+});
+
+function askConfirm(message, onYes) {
+  const overlay = document.getElementById('overlay');
+  document.getElementById('confirmMessage').textContent = message;
+  overlay.classList.add('show');
+
+  const okBtn = document.getElementById('confirmOk');
+  const cancelBtn = document.getElementById('confirmCancel');
+
+  function cleanup() {
+    overlay.classList.remove('show');
+    okBtn.removeEventListener('click', onOk);
+    cancelBtn.removeEventListener('click', onCancel);
+  }
+  function onOk() { cleanup(); onYes(); }
+  function onCancel() { cleanup(); }
+
+  okBtn.addEventListener('click', onOk);
+  cancelBtn.addEventListener('click', onCancel);
+}
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  askConfirm('Clear the whole pattern?', () => {
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (isLit(x,y)) paintCell(x, y, 0);
+  });
+});
+document.getElementById('fillBtn').addEventListener('click', () => {
+  askConfirm('Fill the whole pattern at the current brightness?', () => {
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (isLit(x,y)) paintCell(x, y, currentBrightness);
+  });
+});
+
+// Shared mapping between the 13x13 editor and the 25x25 output grid.
+const cellSpan = 25 / SIZE;
+function srcIndex(target) {
+  const posInSpan = (target + 0.5) / cellSpan;
+  return Math.min(SIZE - 1, Math.floor(posInSpan));
+}
+
+function encode() {
+  // Center-aligned nearest-neighbor upscale, 13x13 -> 25x25.
+  let s = '';
+  for (let row = 0; row < 25; row++) {
+    const sy = srcIndex(row);
+    for (let col = 0; col < 25; col++) {
+      const sx = srcIndex(col);
+      s += levelToHex(state[sy][sx]);
+    }
+  }
+  return s;
+}
+
+function hexToLevel(ch) {
+  const value = parseInt(ch, 16);
+  if (isNaN(value)) return 0;
+  return Math.round(value * 10 / 15);
+}
+
+function decodeAndLoad(hexStr) {
+  // Pick one representative 25x25 cell for each 13x13 source pixel
+  // (the middle of the block that upscaling would have produced),
+  // so this is the correct inverse of encode() above.
+  const repFor = (srcIdx) => {
+    const hits = [];
+    for (let t = 0; t < 25; t++) if (srcIndex(t) === srcIdx) hits.push(t);
+    return hits[Math.floor(hits.length / 2)];
+  };
+  const repRow = Array.from({length: SIZE}, (_, i) => repFor(i));
+  const repCol = repRow; // same mapping for both axes (square grid)
+
+  for (let sy = 0; sy < SIZE; sy++) {
+    for (let sx = 0; sx < SIZE; sx++) {
+      if (!isLit(sx, sy)) continue;
+      const row = repRow[sy];
+      const col = repCol[sx];
+      const ch = hexStr[row * 25 + col];
+      paintCell(sx, sy, hexToLevel(ch));
+    }
+  }
+}
+
+function render() {
+  outputEl.value = encode();
+}
+
+// ---- Save / Load (stored in this browser's localStorage) ----
+const STORAGE_INDEX_KEY = 'glyph4apro_index';
+const STORAGE_PREFIX = 'glyph4apro_pattern_';
+
+function getIndex() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_INDEX_KEY)) || [];
+  } catch (e) { return []; }
+}
+function setIndex(arr) {
+  localStorage.setItem(STORAGE_INDEX_KEY, JSON.stringify(arr));
+}
+
+function savePattern(name) {
+  localStorage.setItem(STORAGE_PREFIX + name, JSON.stringify(state));
+  const idx = getIndex();
+  if (!idx.includes(name)) {
+    idx.push(name);
+    setIndex(idx);
+  }
+  refreshSavedList();
+}
+
+function loadPattern(name) {
+  const raw = localStorage.getItem(STORAGE_PREFIX + name);
+  if (!raw) return;
+  const loaded = JSON.parse(raw);
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (isLit(x, y)) paintCell(x, y, loaded[y] && loaded[y][x] ? loaded[y][x] : 0);
+    }
+  }
+}
+
+function deletePattern(name) {
+  localStorage.removeItem(STORAGE_PREFIX + name);
+  setIndex(getIndex().filter(n => n !== name));
+  refreshSavedList();
+}
+
+function thumbnailCanvas(patternState) {
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d');
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (!isLit(x, y)) continue;
+      const level = (patternState[y] && patternState[y][x]) ? patternState[y][x] : 0;
+      const intensity = level / 10;
+      if (level === 0) {
+        ctx.fillStyle = '#2a2a2d';
+      } else {
+        const r = 255, g = Math.round(255 * (0.85 + 0.15*intensity)), b = Math.round(255 * 0.6 * intensity);
+        ctx.fillStyle = `rgba(${r},${g},${b},${0.25 + 0.75*intensity})`;
+      }
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  return canvas;
+}
+
+function refreshSavedList() {
+  const listEl = document.getElementById('savedList');
+  const emptyEl = document.getElementById('savedEmpty');
+  const names = getIndex();
+  listEl.innerHTML = '';
+  emptyEl.style.display = names.length ? 'none' : 'block';
+  names.forEach(name => {
+    const raw = localStorage.getItem(STORAGE_PREFIX + name);
+    const patternState = raw ? JSON.parse(raw) : null;
+
+    const row = document.createElement('div');
+    row.className = 'savedItem';
+
+    if (patternState) {
+      row.appendChild(thumbnailCanvas(patternState));
+    }
+
+    const label = document.createElement('div');
+    label.className = 'name';
+    label.textContent = name;
+
+    const loadBtn = document.createElement('button');
+    loadBtn.textContent = 'Load';
+    loadBtn.addEventListener('click', () => {
+      askConfirm(`Load "${name}"? This replaces your current pattern.`, () => loadPattern(name));
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', () => {
+      askConfirm(`Delete "${name}"?`, () => deletePattern(name));
+    });
+
+    row.appendChild(label);
+    row.appendChild(loadBtn);
+    row.appendChild(delBtn);
+    listEl.appendChild(row);
+  });
+}
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const nameEl = document.getElementById('patternName');
+  const name = nameEl.value.trim();
+  if (!name) return;
+  const idx = getIndex();
+  const doSave = () => { savePattern(name); nameEl.value = ''; };
+  if (idx.includes(name)) {
+    askConfirm(`"${name}" already exists. Overwrite it?`, doSave);
+  } else {
+    doSave();
+  }
+});
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  const inputEl = document.getElementById('importInput');
+  const statusEl = document.getElementById('importStatus');
+  const hexStr = inputEl.value.trim().toUpperCase();
+  if (hexStr.length !== 625 || !/^[0-9A-F]+$/.test(hexStr)) {
+    statusEl.style.color = '#ff6b6b';
+    statusEl.textContent = `Needs exactly 625 hex characters (found ${hexStr.length}).`;
+    return;
+  }
+  askConfirm('Import this pattern onto the grid? This replaces your current pattern.', () => {
+    decodeAndLoad(hexStr);
+    statusEl.style.color = 'var(--accent)';
+    statusEl.textContent = 'Imported. Give it a name and hit Save to keep it.';
+    setTimeout(() => statusEl.textContent = '', 3000);
+  });
+});
+
+// ---- Cloud sync via a GitHub Gist ----
+// Lets Tasker pull the current pattern with a plain HTTP GET. Uses a
+// personal access token (entered once, stored only in this browser) to
+// create/update a secret Gist, and a revision-less raw URL so Tasker
+// always reads the latest content without needing any auth itself.
+async function ensureGist() {
+  let gistId = localStorage.getItem('gh_gist_id');
+  let owner = localStorage.getItem('gh_owner');
+  if (gistId && owner) return { gistId, owner };
+
+  let token = localStorage.getItem('gh_token');
+  if (!token) {
+    token = prompt('One-time setup: paste a GitHub personal access token with "gist" scope (Settings \u2192 Developer settings \u2192 Personal access tokens \u2192 Tokens (classic) \u2192 Generate, tick only "gist"):');
+    if (!token) throw new Error('No token provided.');
+    localStorage.setItem('gh_token', token.trim());
+    token = token.trim();
+  }
+
+  const res = await fetch('https://api.github.com/gists', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'token ' + token,
+      'Accept': 'application/vnd.github+json'
+    },
+    body: JSON.stringify({
+      description: '4a Pro Glyph pattern (auto-updated)',
+      public: false,
+      files: { 'glyph.txt': { content: outputEl.value || '0'.repeat(625) } }
+    })
+  });
+  if (!res.ok) throw new Error('Could not create gist (' + res.status + ')');
+  const data = await res.json();
+  gistId = data.id;
+  owner = data.owner.login;
+  localStorage.setItem('gh_gist_id', gistId);
+  localStorage.setItem('gh_owner', owner);
+  return { gistId, owner };
+}
+
+function gistRawUrl(owner, gistId) {
+  // No commit hash in the path = always redirects to the latest content.
+  return `https://gist.githubusercontent.com/${owner}/${gistId}/raw/glyph.txt`;
+}
+
+document.getElementById('cloudSendBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('cloudStatus');
+  const urlRow = document.getElementById('cloudUrlRow');
+  const urlEl = document.getElementById('cloudUrl');
+  statusEl.style.color = 'var(--accent)';
+  statusEl.textContent = 'Sending...';
+  try {
+    const { gistId, owner } = await ensureGist();
+    const token = localStorage.getItem('gh_token');
+    const res = await fetch('https://api.github.com/gists/' + gistId, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'token ' + token,
+        'Accept': 'application/vnd.github+json'
+      },
+      body: JSON.stringify({ files: { 'glyph.txt': { content: outputEl.value } } })
+    });
+    if (!res.ok) throw new Error('Upload failed (' + res.status + ')');
+    const url = gistRawUrl(owner, gistId);
+    statusEl.textContent = 'Sent. Tasker can now pull this URL:';
+    urlEl.value = url;
+    urlRow.style.display = 'flex';
+  } catch (e) {
+    statusEl.style.color = '#ff6b6b';
+    statusEl.textContent = 'Error: ' + e.message;
+  }
+});
+
+document.getElementById('copyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(outputEl.value);
+    copyStatusEl.textContent = 'Copied.';
+  } catch (e) {
+    outputEl.select();
+    document.execCommand('copy');
+    copyStatusEl.textContent = 'Copied.';
+  }
+  setTimeout(() => copyStatusEl.textContent = '', 1500);
+});
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const blob = new Blob([outputEl.value], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'glyph.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  copyStatusEl.textContent = 'Saved glyph.txt to Downloads.';
+  setTimeout(() => copyStatusEl.textContent = '', 2500);
+});
+
+buildGrid();
+render();
+refreshSavedList();
+
+// If cloud sync was already set up before, show the URL immediately.
+(function initCloudUrl() {
+  const gistId = localStorage.getItem('gh_gist_id');
+  const owner = localStorage.getItem('gh_owner');
+  if (gistId && owner) {
+    document.getElementById('cloudUrl').value = gistRawUrl(owner, gistId);
+    document.getElementById('cloudUrlRow').style.display = 'flex';
+  }
+})();
+</script>
+
+</body>
+</html>
