@@ -208,6 +208,7 @@
     <label style="min-width:auto;">Tasker URL</label>
     <input type="text" id="cloudUrl" readonly style="flex:1;background:#0a0a0b;border:1px solid var(--border);color:#8fe28f;padding:8px;border-radius:8px;font-size:11px;font-family:monospace;">
   </div>
+  <button id="cloudResetBtn" style="margin-top:10px;">Reset cloud sync (start fresh)</button>
 </div>
 
 <div class="panel">
@@ -593,74 +594,15 @@ function gistRawUrl(owner, gistId) {
   return `https://gist.githubusercontent.com/${owner}/${gistId}/raw/glyph.txt`;
 }
 
-document.getElementById('cloudSendBtn').addEventListener('click', async () => {
-  const statusEl = document.getElementById('cloudStatus');
-  const urlRow = document.getElementById('cloudUrlRow');
-  const urlEl = document.getElementById('cloudUrl');
-  statusEl.style.color = 'var(--accent)';
-  statusEl.textContent = 'Sending...';
-  try {
-    const { gistId, owner } = await ensureGist();
-    const token = localStorage.getItem('gh_token');
-    const res = await fetch('https://api.github.com/gists/' + gistId, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': 'token ' + token,
-        'Accept': 'application/vnd.github+json'
-      },
-      body: JSON.stringify({ files: { 'glyph.txt': { content: outputEl.value } } })
-    });
-    if (!res.ok) throw new Error('Upload failed (' + res.status + ')');
-    const url = gistRawUrl(owner, gistId);
-    statusEl.textContent = 'Sent. Tasker can now pull this URL:';
-    urlEl.value = url;
-    urlRow.style.display = 'flex';
-  } catch (e) {
-    statusEl.style.color = '#ff6b6b';
-    statusEl.textContent = 'Error: ' + e.message;
-  }
+document.getElementById('cloudResetBtn').addEventListener('click', () => {
+  askConfirm('Clear saved GitHub token and Gist link, and start fresh?', () => {
+    localStorage.removeItem('gh_token');
+    localStorage.removeItem('gh_gist_id');
+    localStorage.removeItem('gh_owner');
+    document.getElementById('cloudUrlRow').style.display = 'none';
+    document.getElementById('cloudUrl').value = '';
+    document.getElementById('cloudStatus').textContent = 'Cleared. Tap "Send to cloud" to set up again.';
+  });
 });
 
-document.getElementById('copyBtn').addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(outputEl.value);
-    copyStatusEl.textContent = 'Copied.';
-  } catch (e) {
-    outputEl.select();
-    document.execCommand('copy');
-    copyStatusEl.textContent = 'Copied.';
-  }
-  setTimeout(() => copyStatusEl.textContent = '', 1500);
-});
-
-document.getElementById('downloadBtn').addEventListener('click', () => {
-  const blob = new Blob([outputEl.value], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'glyph.txt';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  copyStatusEl.textContent = 'Saved glyph.txt to Downloads.';
-  setTimeout(() => copyStatusEl.textContent = '', 2500);
-});
-
-buildGrid();
-render();
-refreshSavedList();
-
-// If cloud sync was already set up before, show the URL immediately.
-(function initCloudUrl() {
-  const gistId = localStorage.getItem('gh_gist_id');
-  const owner = localStorage.getItem('gh_owner');
-  if (gistId && owner) {
-    document.getElementById('cloudUrl').value = gistRawUrl(owner, gistId);
-    document.getElementById('cloudUrlRow').style.display = 'flex';
-  }
-})();
-</script>
-
-</body>
-</html>
+document.getElementById('cloudSendBtn').addEventListe
