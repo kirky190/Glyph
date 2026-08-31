@@ -165,11 +165,9 @@
   </div>
 </div>
 
-<h1>4a Pro Glyph Translator</h1>
-<div class="subtitle">Paint a pattern on the real 4a Pro LED shape. Exports a 625-char hex string (upscaled to 25×25) to paste into the original GlyphMatrix Tasker Plugin app's pattern field / %glyph variable.</div>
+<h1>4a Pro Glyph</h1>
 
 <div class="panel">
-  <h2>Pattern (tap or drag)</h2>
   <div id="grid"></div>
   <div class="row">
     <label>Brightness</label>
@@ -180,6 +178,8 @@
     <button id="clearBtn">Clear</button>
     <button id="fillBtn">Fill</button>
   </div>
+  <button class="primary" id="cloudSendBtn" style="margin-top:14px;">Glyph</button>
+  <div id="cloudStatus" style="font-size:12px;color:var(--accent);margin-top:8px;min-height:14px;"></div>
 </div>
 
 <div class="panel">
@@ -199,12 +199,16 @@
   <div id="importStatus" style="font-size:12px;color:var(--accent);margin-top:6px;height:14px;"></div>
 </div>
 
+<div style="text-align:center;margin-top:8px;">
+  <button id="advancedToggleBtn" style="max-width:160px;margin:0 auto;background:transparent;border:none;color:var(--muted);font-size:12px;text-decoration:underline;">Advanced</button>
+</div>
+
+<div id="advancedSection" style="display:none;">
+
 <div class="panel">
-  <h2>Cloud sync (for Tasker)</h2>
-  <div class="subtitle" style="margin-bottom:10px;">One-time setup with a GitHub token, then Tasker pulls your pattern automatically &mdash; no copy/paste, no files.</div>
-  <button class="primary" id="cloudSendBtn">Send to cloud</button>
-  <div id="cloudStatus" style="font-size:12px;color:var(--accent);margin-top:8px;min-height:14px;"></div>
-  <div class="row" id="cloudUrlRow" style="display:none;">
+  <h2>Cloud sync setup</h2>
+  <div class="subtitle" style="margin-bottom:10px;">One-time setup with a GitHub token. The Glyph button above sends automatically once this is done.</div>
+  <div class="row" id="cloudUrlRow" style="display:none;margin-top:0;">
     <label style="min-width:auto;">Tasker URL</label>
     <input type="text" id="cloudUrl" readonly style="flex:1;background:#0a0a0b;border:1px solid var(--border);color:#8fe28f;padding:8px;border-radius:8px;font-size:11px;font-family:monospace;">
   </div>
@@ -217,6 +221,8 @@
   <button class="primary" id="copyBtn" style="margin-top:10px;">Copy to clipboard</button>
   <button id="downloadBtn" style="margin-top:10px;">Download as file (glyph.txt)</button>
   <div id="copyStatus"></div>
+</div>
+
 </div>
 
 <script>
@@ -274,13 +280,6 @@ function buildGrid() {
         cell.classList.add('editable');
         cell.dataset.x = x;
         cell.dataset.y = y;
-        // Direct per-cell click as a fallback in case pointer/drag
-        // events aren't reliable on this browser - simple tap always
-        // toggles the cell even if drag-painting doesn't work.
-        cell.addEventListener('click', () => {
-          const v = (state[y][x] === currentBrightness) ? 0 : currentBrightness;
-          paintCell(x, y, v);
-        });
       } else {
         cell.classList.add('masked');
       }
@@ -558,12 +557,16 @@ document.getElementById('importBtn').addEventListener('click', () => {
 async function ensureGist() {
   let gistId = localStorage.getItem('gh_gist_id');
   let owner = localStorage.getItem('gh_owner');
-  if (gistId && owner) return { gistId, owner };
+  // Treat a missing OR corrupted (literal "undefined"/"null" string, or
+  // empty) cached value as "not set up yet", so a bad past attempt can't
+  // get silently reused forever.
+  const isValid = (v) => v && v !== 'undefined' && v !== 'null' && v.trim() !== '';
+  if (isValid(gistId) && isValid(owner)) return { gistId, owner };
 
   let token = localStorage.getItem('gh_token');
-  if (!token) {
+  if (!isValid(token)) {
     token = prompt('One-time setup: paste a GitHub personal access token with "gist" scope (Settings \u2192 Developer settings \u2192 Personal access tokens \u2192 Tokens (classic) \u2192 Generate, tick only "gist"):');
-    if (!token) throw new Error('No token provided.');
+    if (!isValid(token)) throw new Error('No token provided.');
     localStorage.setItem('gh_token', token.trim());
     token = token.trim();
   }
@@ -580,8 +583,14 @@ async function ensureGist() {
       files: { 'glyph.txt': { content: outputEl.value || '0'.repeat(625) } }
     })
   });
-  if (!res.ok) throw new Error('Could not create gist (' + res.status + ')');
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error('Could not create gist (' + res.status + '): ' + errText.slice(0, 150));
+  }
   const data = await res.json();
+  if (!isValid(data.id) || !data.owner || !isValid(data.owner.login)) {
+    throw new Error('GitHub response was missing an id/owner - check your token has "gist" scope.');
+  }
   gistId = data.id;
   owner = data.owner.login;
   localStorage.setItem('gh_gist_id', gistId);
@@ -624,7 +633,7 @@ document.getElementById('cloudSendBtn').addEventListener('click', async () => {
     });
     if (!res.ok) throw new Error('Upload failed (' + res.status + ')');
     const url = gistRawUrl(owner, gistId);
-    statusEl.textContent = 'Sent. Tasker can now pull this URL:';
+    statusEl.textContent = 'Sent (gist ' + gistId + '). Tasker can now pull this URL:';
     urlEl.value = url;
     urlRow.style.display = 'flex';
   } catch (e) {
@@ -662,6 +671,20 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
 buildGrid();
 render();
 refreshSavedList();
+
+document.getElementById('advancedToggleBtn').addEventListener('click', () => {
+  const section = document.getElementById('advancedSection');
+  if (section.style.display !== 'none') {
+    section.style.display = 'none';
+    return;
+  }
+  const pw = prompt('Password:');
+  if (pw === '8539') {
+    section.style.display = 'block';
+  } else if (pw !== null) {
+    alert('Wrong password.');
+  }
+});
 
 // If cloud sync was already set up before, show the URL immediately.
 (function initCloudUrl() {
