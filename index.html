@@ -199,6 +199,16 @@
   <div id="importStatus" style="font-size:12px;color:var(--accent);margin-top:6px;height:14px;"></div>
 </div>
 
+<div class="panel">
+  <h2>Import setup from another phone</h2>
+  <div class="subtitle" style="margin-bottom:8px;">Paste a setup exported from your main phone to share the same gist here, instead of creating a separate one.</div>
+  <div class="row" style="margin-top:0;">
+    <input type="text" id="importSetupInput" placeholder="Paste exported setup here" style="flex:1;background:#0a0a0b;border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:12px;">
+    <button id="importSetupBtn" style="flex:0 0 auto;">Import</button>
+  </div>
+  <div id="setupTransferStatus" style="font-size:12px;color:var(--accent);margin-top:6px;min-height:14px;"></div>
+</div>
+
 <div style="text-align:center;margin-top:8px;">
   <button id="advancedToggleBtn" style="max-width:160px;margin:0 auto;background:transparent;border:none;color:var(--muted);font-size:12px;text-decoration:underline;">Advanced</button>
 </div>
@@ -211,8 +221,17 @@
   <div class="row" id="cloudUrlRow" style="display:none;margin-top:0;">
     <label style="min-width:auto;">Tasker URL</label>
     <input type="text" id="cloudUrl" readonly style="flex:1;background:#0a0a0b;border:1px solid var(--border);color:#8fe28f;padding:8px;border-radius:8px;font-size:11px;font-family:monospace;">
+    <button id="cloudUrlCopyBtn" style="flex:0 0 auto;padding:8px 12px;">Copy</button>
   </div>
+  <div id="cloudUrlCopyStatus" style="font-size:12px;color:var(--accent);min-height:14px;margin-top:4px;"></div>
   <button id="cloudResetBtn" style="margin-top:10px;">Reset cloud sync (start fresh)</button>
+
+  <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+    <div class="subtitle" style="margin-bottom:8px;">Export this device's setup to use on another phone:</div>
+    <button id="exportSetupBtn">Export this setup</button>
+    <textarea id="exportSetupOutput" rows="3" readonly style="margin-top:8px;display:none;color:#8fe28f;"></textarea>
+    <div id="exportSetupStatus" style="font-size:12px;color:var(--accent);margin-top:6px;min-height:14px;"></div>
+  </div>
 </div>
 
 <div class="panel">
@@ -602,6 +621,60 @@ function gistRawUrl(owner, gistId) {
   // No commit hash in the path = always redirects to the latest content.
   return `https://gist.githubusercontent.com/${owner}/${gistId}/raw/glyph.txt`;
 }
+
+document.getElementById('cloudUrlCopyBtn').addEventListener('click', async () => {
+  const urlEl = document.getElementById('cloudUrl');
+  const statusEl = document.getElementById('cloudUrlCopyStatus');
+  try {
+    await navigator.clipboard.writeText(urlEl.value);
+    statusEl.textContent = 'Copied full URL.';
+  } catch (e) {
+    urlEl.select();
+    document.execCommand('copy');
+    statusEl.textContent = 'Copied full URL.';
+  }
+  setTimeout(() => statusEl.textContent = '', 1500);
+});
+
+document.getElementById('exportSetupBtn').addEventListener('click', () => {
+  const statusEl = document.getElementById('exportSetupStatus');
+  const outEl = document.getElementById('exportSetupOutput');
+  const token = localStorage.getItem('gh_token');
+  const gistId = localStorage.getItem('gh_gist_id');
+  const owner = localStorage.getItem('gh_owner');
+  if (!token || !gistId || !owner) {
+    statusEl.style.color = '#ff6b6b';
+    statusEl.textContent = 'Nothing to export yet - send at least once on this device first.';
+    return;
+  }
+  const packed = btoa(JSON.stringify({ token, gistId, owner }));
+  outEl.value = packed;
+  outEl.style.display = 'block';
+  statusEl.style.color = 'var(--accent)';
+  statusEl.textContent = 'Copy this text and paste it into the Import box on the other phone.';
+});
+
+document.getElementById('importSetupBtn').addEventListener('click', () => {
+  const statusEl = document.getElementById('setupTransferStatus');
+  const inputEl = document.getElementById('importSetupInput');
+  try {
+    const data = JSON.parse(atob(inputEl.value.trim()));
+    if (!data.token || !data.gistId || !data.owner) throw new Error('missing fields');
+    askConfirm('Import this setup? It replaces any cloud sync setup already on this device.', () => {
+      localStorage.setItem('gh_token', data.token);
+      localStorage.setItem('gh_gist_id', data.gistId);
+      localStorage.setItem('gh_owner', data.owner);
+      document.getElementById('cloudUrl').value = gistRawUrl(data.owner, data.gistId);
+      document.getElementById('cloudUrlRow').style.display = 'flex';
+      statusEl.style.color = 'var(--accent)';
+      statusEl.textContent = 'Imported. This device now shares the same gist.';
+      inputEl.value = '';
+    });
+  } catch (e) {
+    statusEl.style.color = '#ff6b6b';
+    statusEl.textContent = 'That doesn\'t look like a valid exported setup.';
+  }
+});
 
 document.getElementById('cloudResetBtn').addEventListener('click', () => {
   askConfirm('Clear saved GitHub token and Gist link, and start fresh?', () => {
